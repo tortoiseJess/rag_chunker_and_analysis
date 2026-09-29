@@ -69,15 +69,18 @@ in at least 4 of 5 tries.
        - "No chunk is shorter than 200 characters, since anything below that
           in my corpus turned out to be a heading with no content under it." -->
 
-
+The chunk should be large enough/ relevant enough to expand 3-4 sentences.
 
 **Why this target:**
+because my questions involve 3 sentences or more to find the answer.
 
 
 
 ---
 
 ## 5. Your choice
+
+In questions that is not a direct answer and require a logic deuction, it needs to return at least 1 relevant source.
 
 <!-- YOU WRITE THIS ONE TOO.
 
@@ -90,7 +93,7 @@ in at least 4 of 5 tries.
 
 
 **Why this target:**
-
+I want the system to be not too dumb where there is obvious one step logic deduction, the RAG should still be able to retrieve the relevant sources
 
 
 ---

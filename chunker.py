@@ -22,6 +22,7 @@ to it, write down what you saw, and move on. That's a real observation about
 your pipeline, not giving up.
 """
 
+import re
 from dataclasses import dataclass
 
 import config
@@ -80,24 +81,120 @@ def fallback_split(
     return chunks
 
 
+# city_guides documents are structured: an H1 title, then a run of "## Heading"
+# sections, each holding one paragraph of a few sentences. A section is the
+# natural unit of meaning here (criterion 4 wants 3-4 sentences per chunk),
+# so chunks never cross a heading boundary. Overlap only makes sense *inside*
+# a paragraph that had to be split across chunks, so a fresh heading always
+# starts overlap-free.
+
+HEADING_RE = re.compile(r"^#{1,6}\s+.*$", re.MULTILINE)
+SENTENCE_RE = re.compile(r"(?<=[.!?])\s+(?=[A-Z(])")
+
+TARGET_CHARS = 500     # aim to fill a chunk to about this many characters...
+MAX_CHARS = 800        # ...but never exceed this before starting a new one
+OVERLAP_WORDS = 4      # words repeated from the end of one chunk to the next
+
+
+def _split_sections(text: str) -> list[tuple[str, str]]:
+    """Break a document into (heading, body) sections on '#'-style headings."""
+    matches = list(HEADING_RE.finditer(text))
+    if not matches:
+        return [("", text.strip())]
+
+    sections = []
+    lead = text[: matches[0].start()].strip()
+    if lead:
+        sections.append(("", lead))
+
+    for i, m in enumerate(matches):
+        heading = m.group().lstrip("#").strip()
+        body_start = m.end()
+        body_end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
+        body = text[body_start:body_end].strip()
+        if body:
+            sections.append((heading, body))
+
+    return sections
+
+
+def _split_sentences(paragraph: str) -> list[str]:
+    """Split one paragraph into sentences, collapsing internal line breaks."""
+    flat = " ".join(paragraph.split())
+    if not flat:
+        return []
+    return [s.strip() for s in SENTENCE_RE.split(flat) if s.strip()]
+
+
+def _group_sentences(sentences: list[str]) -> list[str]:
+    """
+    Pack sentences into chunks, never splitting a sentence in half, with the
+    last few words of a chunk repeated at the start of the next one (overlap
+    only makes sense within the same paragraph, so this never crosses a
+    heading — callers only pass sentences from one section).
+    """
+    pieces: list[str] = []
+    current: list[str] = []
+    current_len = 0
+    has_new_content = False  # False while `current` holds only carried-over overlap words
+
+    def start_new_chunk() -> None:
+        nonlocal current, current_len, has_new_content
+        pieces.append(" ".join(current))
+        overlap = current[-1].split()[-OVERLAP_WORDS:]
+        current = [" ".join(overlap)] if overlap else []
+        current_len = len(current[0]) if current else 0
+        has_new_content = False
+
+    for sentence in sentences:
+        added_len = len(sentence) + (1 if current else 0)
+        if current and has_new_content and current_len + added_len > MAX_CHARS:
+            start_new_chunk()
+            added_len = len(sentence) + (1 if current else 0)
+
+        current.append(sentence)
+        current_len += added_len
+        has_new_content = True
+        if current_len >= TARGET_CHARS:
+            start_new_chunk()
+
+    # Trailing overlap with no sentence appended after it just repeats the
+    # end of the previous chunk — drop it instead of emitting a fragment.
+    if current and has_new_content:
+        pieces.append(" ".join(current))
+
+    return pieces
+
+
 def split_documents(documents: list[Document]) -> list[Chunk]:
     """
-    Split documents into chunks. ⚠️ REPLACE THE BODY OF THIS IN MILESTONE 3.
-
-    Right now it just calls the fallback. That is the plain, generic behaviour
-    the brief is talking about.
-
-    When you write your own strategy, set `produced_by` to
-    "chunker.py::split_documents" so your README's Sample Chunks section names
-    the right function. `app.py chunks` prints that string for you.
-
-    Things worth thinking about before you write any code:
-      - Are your documents short posts or long guides?
-      - Is the useful information in one sentence, or spread over a paragraph?
-      - Would splitting on paragraph breaks keep more thoughts intact than
-        splitting on a character count?
+    Sentence-aware chunking for city_guides: one chunk per heading section
+    where the section fits comfortably (most sections here are a single
+    3-5 sentence paragraph), splitting further only when a section runs long.
+    No overlap ever crosses a heading boundary; a 4-word overlap is carried
+    between chunks split out of the same paragraph.
     """
-    return fallback_split(documents)
+    chunks: list[Chunk] = []
+
+    for doc in documents:
+        index = 0
+        for heading, body in _split_sections(doc.text):
+            sentences = _split_sentences(body)
+            if not sentences:
+                continue
+            for piece in _group_sentences(sentences):
+                text = f"{heading}: {piece}" if heading else piece
+                chunks.append(
+                    Chunk(
+                        text=text,
+                        source=doc.source,
+                        index=index,
+                        produced_by="chunker.py::split_documents",
+                    )
+                )
+                index += 1
+
+    return chunks
 
 
 def describe(chunks: list[Chunk]) -> str:

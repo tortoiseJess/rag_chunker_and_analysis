@@ -26,21 +26,50 @@
      this repo.
 
      Milestone 5. -->
+I picked the city_guides corpora, I asked questions that are one step straighforward questions present in the text and tricky ones 
+which needs logical deduction. Before changing to my chunker, the rag failed to answer my questions and could not retrieve relevant information that were close enough. Now it can.
 
 ## Chunking Strategy
 
+**Method:** `chunker.py::split_documents`. Every document in `city_guides` is
+structured the same way: an H1 title, then a run of `## Heading` sections, and
+almost every section is exactly one paragraph of 3-5 sentences (verified by
+reading all 14 files in Milestone 1). That structure *is* the chunk boundary —
+each section already reads as one complete, self-contained thought ("Getting
+there", "Eat and drink", etc.), so I split on headings first, then split each
+section into sentences, then pack sentences into a chunk without ever cutting
+a sentence in half.
+
 **Chunk size:**
+  loaded   14 documents, 28,958 characters, ~2,068 characters per document
+  chunked  95 chunks, 299 characters on average (shortest 172, longest 633)
+
+I did not pick a target character count first and cut to fit it. I measured
+the sections instead: almost all of them are 150-650 characters and 3-5
+sentences, so I set the target/max (500/800 chars in `chunker.py`) *above*
+the longest section I found, so that the common case — one heading, one
+paragraph — becomes exactly one chunk. That satisfies criterion 4 directly:
+the chunk is "large enough to hold 3-4 sentences" because in this corpus a
+section basically *is* 3-4 sentences. The one outlier, `guide_accessibility.md`,
+packs several bolded sub-paragraphs under each heading instead of one, so its
+sections run long enough (up to ~1,000 chars) to split into two chunks — that's
+the only file where the split/overlap logic actually fires.
+
 **Overlap:**
 
-<!-- What about YOUR documents made you pick these numbers? Short posts and
-     long sectioned guides don't want the same chunking, and "800 seemed
-     reasonable" earns nothing. Point at something you noticed when you read
-     the documents in Milestone 1.
-
-     If you changed your mind partway through, say so and say why. That's worth
-     more than pretending you got it right first time.
-
-     Milestone 3. -->
+4 words, and it only ever applies *within* a section that had to be split
+(never between two different headings — a new heading always starts clean).
+Overlap exists so that if a section is long enough to become two chunks, the
+second chunk isn't missing the antecedent of whatever it starts with. I chose
+4 words, not a character count, because the unit that matters here is "enough
+words to place the sentence," and this corpus's sentences are short enough
+that even 4-5 words is normally a recognizable clause fragment, e.g. chunk
+`guide_accessibility.md#2` opens with "and through the centre." — the tail of
+the previous chunk's last sentence — before continuing with its own new
+sentences. (I did not tune this against a bigger number; I picked the smallest
+overlap that still reads as "picking up where the last chunk left off" rather
+than repeating a whole sentence, since duplicating more than that just wastes
+embedding budget on words already present in the neighboring chunk.)
 
 ## Sample Chunks
 
@@ -53,30 +82,35 @@
 
      Milestone 3. -->
 
-**Chunk 1** — source: `` — produced by: ``
+======================================================================
+Chunk 1  |  source: guide_accessibility.md#1  |  produced by: chunker.py::split_documents
+======================================================================
+Straightforward: **Thornby Wells** is the easiest town in the region. It is flat, compact, and everything is within three minutes of everything else. Parking is free for two hours anywhere in town and the station is central. The pump room and gardens are level throughout. **Marchwood** has a modern tram network with level boarding on all four lines, running every 8 minutes on weekdays. The city museum and covered market are both step-free. The distances between districts are the main consideration. **Brightwater** is level along the river and through the centre.
 
-```
-```
+======================================================================
+Chunk 2  |  source: guide_accessibility.md#2  |  produced by: chunker.py::split_documents
+======================================================================
+Straightforward: and through the centre. The mill museum is step-free. The station is a 15-minute walk from campus on flat ground, or the shuttle meets the four busiest arrivals.
 
-**Chunk 2** — source: `` — produced by: ``
+<!-- Chunks 1 and 2 above are the same "Straightforward" section, split because
+     it packs several bolded sub-paragraphs into one heading. Chunk 2 opens
+     with "and through the centre." — the last 4 words of chunk 1 — which is
+     the overlap in action. -->
 
-```
-```
+======================================================================
+Chunk 3  |  source: guide_givens_mill.md#3  |  produced by: chunker.py::split_documents
+======================================================================
+Eat and drink: A tearoom attached to the mill, open 10 to 4 daily except Tuesdays, which sells bread made from the flour ground twenty metres away and is the reason most people come. One pub, food served lunchtimes and Thursday to Saturday evenings.
 
-**Chunk 3** — source: `` — produced by: ``
+======================================================================
+Chunk 4  |  source: guide_kestrelford.md#6  |  produced by: chunker.py::split_documents
+======================================================================
+When to go: Late spring and early autumn. The Saturday market runs year-round but is much reduced from November to February. August is busy with walkers. The single-track approach road is genuinely difficult in snow and the town can be cut off for a day or two most winters.
 
-```
-```
-
-**Chunk 4** — source: `` — produced by: ``
-
-```
-```
-
-**Chunk 5** — source: `` — produced by: ``
-
-```
-```
+======================================================================
+Chunk 5  |  source: guide_regional_transport.md#1  |  produced by: chunker.py::split_documents
+======================================================================
+Buses: Three operators run in the region and they do not accept each other's tickets, which is the single most common source of confusion for visitors. Services concentrate on weekday daytimes. Sunday service is minimal to non-existent outside the Brightwater town routes. The Kestrelford service is hourly on weekdays, two-hourly on Saturdays, and does not run on Sundays. The Halden Bay coast service runs four times daily year-round.
 
 ## Sample Answer
 
@@ -86,9 +120,31 @@
 **Question:**
 
 **Answer:**
+======================================================================
+The assembled prompt, exactly as sent
+======================================================================
+Documents:
 
-```
-```
+[from guide_eating.md]
+Opening hours: This catches visitors out more than anything else. Outside Marchwood, kitchens across the region stop serving at 9pm and often earlier. Kestrelford's pubs serve 12 to 2 and 6 to 8:30 and there is nowhere to eat at all outside those windows. Elder Ness has one pub, closed Mondays. Sunday evening is the hardest meal to find anywhere except Marchwood and Thornby Wells.
+
+[from guide_eating.md]
+Practical: Cash is still useful at markets and in the smaller villages. Corry Vale has a farm shop at the valley mouth selling bread and cheese and little else, closing at 4pm — bring supplies if you are staying there. Elder Ness has one shop, closed Sundays and after 5pm.
+
+[from guide_elder_ness.md]
+Elder Ness: Elder Ness is a headland with a village of 300 on it, a lighthouse, a bird observatory, and very little else. People come for one of three reasons — birds, walking, or a deliberate absence of things to do.
+
+[from guide_corry_vale.md]
+Eat and drink: One pub in the largest village serves food seven days a week. A second, in the third village, opens Thursday to Sunday. There is a farm shop at the valley mouth that sells bread, cheese and little else, and it closes at 4pm. Bring supplies; this is not a place with options.
+
+[from guide_elder_ness.md]
+Eat and drink: One pub, serving food 12 to 2 and 6 to 8, closed Mondays. A shop that sells basics and closes at 5pm and all day Sunday. That is the complete list. Visitors staying more than a night bring food with them.
+
+---
+
+Question: Is there anywhere to eat in Elder Ness on a Sunday evening?
+
+Answer using only the documents above, and name the file you used.
 
 **My relevance cutoff:**
 
@@ -103,7 +159,45 @@
 
 | Question | In corpus? | Best distance |
 |---|---|---|
-|  |  |  |
+
+These are in scope in corpous questions?
+is the museum mentioned in Brighwater suitable for people in wheelchairs?
+  run 1: —  (best distance 0.671)
+  run 2: —  (best distance 0.671)
+  run 3: —  (best distance 0.671)
+
+I like quiet places, should I stay at the seafront hotels?
+  run 1: —  (best distance 0.333)
+  run 2: —  (best distance 0.333)
+  run 3: —  (best distance 0.333)
+
+Which city has the larges population? Which one has the least?
+  run 1: —  (best distance 0.636)
+  run 2: —  (best distance 0.636)
+  run 3: —  (best distance 0.636)
+
+Is there anywhere to eat in Elder Ness on a Sunday evening?
+  run 1: —  (best distance 0.394)
+  run 2: —  (best distance 0.394)
+  run 3: —  (best distance 0.394)
+
+What time do restaurants on Halden Bay's harbour front stop serving in November
+  run 1: —  (best distance 0.302)
+  run 2: —  (best distance 0.302)
+  run 3: —  (best distance 0.302)
+
+I'm taking a Sunday day trip from the regional hub to Kestrelford using only public transport — is that possible?
+  run 1: —  (best distance 0.463)
+  run 2: —  (best distance 0.463)
+  run 3: —  (best distance 0.463)
+
+Out-of-scope questions (the gate should refuse these):
+  refused  (best distance 0.802)  What is the capital of Mongolia?
+  refused  (best distance 0.888)  How do I change the oil in a diesel engine?
+  refused  (best distance 0.967)  Who won the 1994 World Cup?
+  refused  (best distance 0.839)  What is the recommended dosage of ibuprofen for a headache?
+  refused  (best distance 0.847)  How do I write a for loop in Rust?
+  -> gate refused 5 of 5
 
 ## How I Used AI
 
@@ -117,8 +211,10 @@
      Milestone 5. -->
 
 **1.**
+I asked Claude to split from the heading in the city guides and two different headings cannot be in the same chunk, split chunks by sentences, and it needs to fulfill my criteria of 3-5 sentences.
 
 **2.**
+It needs to overlap 4 words as I read that some concepts are similar in different docs so I need this coherence. So I told claude to fix it.
 
 <!-- ── Stretch features ─────────────────────────────────────────────────────
      Doing one? Say so here BEFORE you start. A feature this README never
