@@ -34,11 +34,54 @@ you a scorer; you'd learn nothing from it.
 
 import argparse
 import datetime as dt
+import json
 import sys
 from pathlib import Path
 
 import config
 import questions as qs
+
+STATE_PATH = config.CACHE_DIR / "run_eval_state.json"
+
+
+def load_state() -> dict:
+    """Previously saved per-question results, so a --only re-run doesn't lose the rest."""
+    if not STATE_PATH.exists():
+        return {}
+    try:
+        return json.loads(STATE_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def save_state(state: dict) -> None:
+    config.CACHE_DIR.mkdir(exist_ok=True)
+    STATE_PATH.write_text(json.dumps(state, indent=2), encoding="utf-8")
+
+
+def select_items(items: list[dict], selectors: list[str]) -> list[dict]:
+    """Pick a subset of questions by 1-based index or by a substring match."""
+    chosen = []
+    for sel in selectors:
+        if sel.isdigit():
+            idx = int(sel) - 1
+            if 0 <= idx < len(items):
+                chosen.append(items[idx])
+            else:
+                print(f"  (no question #{sel} — there are {len(items)})", file=sys.stderr)
+            continue
+        matches = [it for it in items if sel.lower() in it["question"].lower()]
+        if not matches:
+            print(f"  (no question matching {sel!r})", file=sys.stderr)
+        chosen.extend(matches)
+    # de-dupe while keeping order
+    seen = set()
+    result = []
+    for it in chosen:
+        if it["question"] not in seen:
+            seen.add(it["question"])
+            result.append(it)
+    return result
 
 
 def load_scorer():
@@ -76,14 +119,21 @@ def main():
     parser.add_argument("--variant", default="default")
     parser.add_argument("--top-k", type=int, default=None)
     parser.add_argument("--threshold", type=float, default=None)
+    parser.add_argument(
+        "--only", nargs="+", default=None,
+        help="only (re)run these questions this time — give a 1-based number "
+             "(e.g. --only 5) or a substring of the question text. Results for "
+             "the other questions are reused from the last saved run, so the "
+             "report still covers all of them.",
+    )
     args = parser.parse_args()
 
     corpus = args.corpus or config.CORPUS
     top_k = args.top_k or config.TOP_K
     threshold = config.THRESHOLD if args.threshold is None else args.threshold
 
-    items = qs.answered()
-    if not items:
+    items_all = qs.answered()
+    if not items_all:
         print(
             "questions.py has no questions in it yet.\n"
             "Milestone 2 asks you to write five. Fill them in and run this again.",
@@ -99,8 +149,20 @@ def main():
     if args.runs < 3:
         print(f"⚠️  {args.runs} run(s). The submission asks for three.\n")
 
-    transcript = []
-    rows = []
+    state = load_state()
+
+    if args.only:
+        items = select_items(items_all, args.only)
+        if not items:
+            print("Nothing matched --only. Nothing was run.", file=sys.stderr)
+            sys.exit(1)
+        skipped = [it["question"] for it in items_all if it not in items]
+        print(f"Running only {len(items)} of {len(items_all)} question(s); "
+              f"reusing saved results for the rest.")
+        for q in skipped:
+            print(f"  (reusing) {q}")
+    else:
+        items = items_all
 
     for item in items:
         question = item["question"]
@@ -108,17 +170,34 @@ def main():
         print(f"\n{question}")
 
         run_results = []
+        entries = []
         for run in range(1, args.runs + 1):
-            answer, results, decision = run_once(
-                question, top_k, threshold, corpus, args.variant
-            )
+            try:
+                answer, results, decision = run_once(
+                    question, top_k, threshold, corpus, args.variant
+                )
+            except Exception as exc:  # a persistent rate limit, etc. — don't lose the rest of the eval
+                print(f"  run {run}: ERROR — {exc}", file=sys.stderr)
+                run_results.append(None)
+                entries.append(
+                    {
+                        "question": question,
+                        "run": run,
+                        "answer": f"[run failed: {exc}]",
+                        "sources": [],
+                        "best_distance": float("nan"),
+                        "gate_passed": None,
+                    }
+                )
+                continue
+
             passed = judge(question, expects, answer, results) if judge else None
             run_results.append(passed)
 
             mark = {True: "pass", False: "fail", None: "—"}[passed]
             print(f"  run {run}: {mark}  (best distance {decision.best_distance:.3f})")
 
-            transcript.append(
+            entries.append(
                 {
                     "question": question,
                     "run": run,
@@ -129,9 +208,29 @@ def main():
                 }
             )
 
-        rows.append({"question": question, "expects": expects, "runs": run_results})
+        state[question] = {"expects": expects, "runs": run_results, "transcript": entries}
+        save_state(state)  # saved after every question, so a later crash can't erase this one
 
     gate_rows = check_out_of_scope(top_k, threshold, corpus, args.variant)
+
+    rows = []
+    transcript = []
+    missing = []
+    for item in items_all:
+        question = item["question"]
+        saved = state.get(question)
+        if saved is None:
+            missing.append(question)
+            rows.append({"question": question, "expects": item.get("expects", ""), "runs": [None] * args.runs})
+            continue
+        rows.append({"question": question, "expects": saved["expects"], "runs": saved["runs"]})
+        transcript.extend(saved["transcript"])
+
+    if missing:
+        print("\nNo saved results yet for:")
+        for q in missing:
+            print(f"  {q}")
+        print("Run without --only (or include them in --only) to fill those in.")
 
     write_report(
         rows, transcript, gate_rows, args, corpus, top_k, threshold,
