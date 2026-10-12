@@ -69,7 +69,7 @@ in at least 4 of 5 tries.
        - "No chunk is shorter than 200 characters, since anything below that
           in my corpus turned out to be a heading with no content under it." -->
 
-The chunk should be large enough/ relevant enough to expand 3-4 sentences.
+The chunk should contain 3 sentences at least.
 
 **Why this target:**
 because my questions involve 3 sentences or more to find the answer.
@@ -80,7 +80,7 @@ because my questions involve 3 sentences or more to find the answer.
 
 ## 5. Your choice
 
-In questions that is not a direct answer and require a logic deuction, it needs to return at least 1 relevant source.
+In questions where the answer is not a substring of the chunks, it needs to return at least 1 source that a human can judge relevance.
 
 <!-- YOU WRITE THIS ONE TOO.
 
@@ -95,6 +95,15 @@ In questions that is not a direct answer and require a logic deuction, it needs 
 **Why this target:**
 I want the system to be not too dumb where there is obvious one step logic deduction, the RAG should still be able to retrieve the relevant sources
 
+> **Revised in unit 2:** Every source name an answer cites is one that
+> `store.search()` actually retrieved for that question — no invented or
+> misattributed filenames — in at least 4 of 5 questions.
+>
+> **Why revised:** "a source a human can judge relevance" required me to
+> sit down and read each chunk myself every time I wanted a number, and
+> that's not something a function call can check. Whether a cited source
+> was actually retrieved (vs. hallucinated) is a plain set comparison —
+> testable and measurable without a human in the loop.
 
 ---
 

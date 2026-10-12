@@ -49,3 +49,7 @@ flask>=3.0,<3.2
 # development server and says so out loud; this is the one you actually deploy
 # behind. Installed now so unit 9 is a command, not a dependency problem.
 gunicorn>=23.0,<24.0
+
+# Fuzzy string matching, for metrics.py's criteria 1/5 checks (rapidfuzz
+# catches a reworded answer that a literal substring match would miss).
+rapidfuzz>=3.0,<4.0

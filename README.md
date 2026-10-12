@@ -243,15 +243,30 @@ It needs to overlap 4 words as I read that some concepts are similar in differen
 
 | Criterion | Target | Run 1 | Run 2 | Run 3 | Verdict |
 |---|---|---|---|---|---|
-| 1. Retrieved chunk contains the answer | 4 of 5 |  |  |  |  |
-| 2. Every answer names a source | 5 of 5 |  |  |  |  |
-| 3. Gate stops out-of-corpus questions | 4 of 5 |  |  |  |  |
-| 4. | | | | | |
-| 5. | | | | | |
+| 1. Retrieved chunk contains the answer | 4 of 5 | 3/5 | 3/5 | 3/5 | MISSED |
+| 2. Every answer names a source | 5 of 5 | 5/5 | 5/5 | 5/5 | MET |
+| 3. Gate stops out-of-corpus questions | 4 of 5 | 5/5 | 5/5 | 5/5 | MET |
+| 4. Chunk contains at least 3 sentences | 5 of 5 | 5/5 | 5/5 | 5/5 | MET |
+| 5. (revised) Every cited source was actually retrieved — no hallucinated citations | 4 of 5 | 5/5 | 5/5 | 5/5 | MET |
+
+> `questions.py` has 6 questions, but this run's judging (the table above, and
+> `metrics.py`) only covers the first 5 — the Kestrelford day-trip question
+> (#6) was not included in this run.
 
 <!-- Underneath, paste the REAL output for each criterion from one of your
      runs — the actual text your system produced, not a description of it.
      Name the file and function that produced it. -->
+Question: Is there anywhere to eat in Elder Ness on a Sunday evening?
+
+#   distance   source                           preview
+----------------------------------------------------------------------------------------------------
+1   0.3936     guide_eating.md                  Opening hours: This catches visitors out more than a...
+2   0.4568     guide_eating.md                  Practical: Cash is still useful at markets and in th...
+3   0.4623     guide_elder_ness.md              Elder Ness: Elder Ness is a headland with a village ...
+4   0.4835     guide_corry_vale.md              Eat and drink: One pub in the largest village serves...
+5   0.5473     guide_elder_ness.md              Eat and drink: One pub, serving food 12 to 2 and 6 t...
+
+Gate: best distance 0.394 is under the 0.7 cutoff
 
 ## Verdicts
 

@@ -21,3 +21,9 @@ Retrieval Recall@K — did we retrieve the chunk containing the answer?
 Answer accuracy — did the LLM answer correctly?
 Faithfulness — is the answer supported by the retrieved text?
 Token usage / latency — how much context did we have to process?
+
+
+## Scorer
+1. llm as judge 
+2. vinilla string match
+3. rapidFuzz?
