@@ -109,4 +109,4 @@ def judge_by_llm(question: str, expects: str, answer: str, results) -> bool:
 
 # ───────────────────────────────────────────────────────────────────
 
-judge = judge_by_keywords
+judge = judge_by_llm

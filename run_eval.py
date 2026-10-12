@@ -84,6 +84,22 @@ def select_items(items: list[dict], selectors: list[str]) -> list[dict]:
     return result
 
 
+def _looks_exhausted(exc: Exception) -> bool:
+    """True for a budget guard or a rate limit that outlasted its retries.
+
+    Those two mean every further call this session will fail the same way, so
+    there's no point grinding through the remaining questions — better to stop
+    and write the report with what's already saved.
+    """
+    message = str(exc).lower()
+    return (
+        type(exc).__name__ == "QuotaGuard"
+        or "still rate limited" in message
+        or ("429" in message)
+        or ("rate" in message and "limit" in message)
+    )
+
+
 def load_scorer():
     """Use scorer.py if the student has built it. Otherwise run unscored."""
     try:
@@ -164,6 +180,7 @@ def main():
     else:
         items = items_all
 
+    interrupted = False
     for item in items:
         question = item["question"]
         expects = item.get("expects", "")
@@ -189,9 +206,17 @@ def main():
                         "gate_passed": None,
                     }
                 )
+                if _looks_exhausted(exc):
+                    interrupted = True
                 continue
 
-            passed = judge(question, expects, answer, results) if judge else None
+            try:
+                passed = judge(question, expects, answer, results) if judge else None
+            except Exception as exc:  # the judge calls the model too — budget/rate limit can hit here
+                print(f"  run {run}: scorer failed — {exc}", file=sys.stderr)
+                passed = None
+                if _looks_exhausted(exc):
+                    interrupted = True
             run_results.append(passed)
 
             mark = {True: "pass", False: "fail", None: "—"}[passed]
@@ -208,8 +233,20 @@ def main():
                 }
             )
 
+            if interrupted:
+                break
+
         state[question] = {"expects": expects, "runs": run_results, "transcript": entries}
         save_state(state)  # saved after every question, so a later crash can't erase this one
+
+        if interrupted:
+            print(
+                "\nStopping here — budget/rate limit looks exhausted for this "
+                "session. Writing the report now with what's saved so far; "
+                "rerun later with --only to fill in the rest.",
+                file=sys.stderr,
+            )
+            break
 
     gate_rows = check_out_of_scope(top_k, threshold, corpus, args.variant)
 
