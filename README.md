@@ -360,10 +360,11 @@ It helped
      not.
 
      Milestone 5. -->
-
+NA
 ## What I'd Do Differently
 
 <!-- Knowing what you know now — which of your five criteria would you write
      differently, and why?
 
      Milestone 5. -->
+Curating the ground truth more precisely. And think ahead what the scorer would look like when I write the expect.
